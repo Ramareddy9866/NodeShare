@@ -15,7 +15,7 @@ app.use(express.json());
 const cors = require('cors');
 const allowedOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
 const corsOptions = {
-  origin: true,
+  origin: allowedOrigin,
   credentials: true,
 };
 app.use(cors(corsOptions));
