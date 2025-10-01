@@ -2,25 +2,25 @@ const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('../config/cloudinary');
 
-// Configure Cloudinary storage
+// setup storage in cloudinary
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'fire-sharing-project', // Folder name in Cloudinary
-    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'txt', 'mp4', 'mp3', 'zip', 'rar'],
-    transformation: [{ width: 1000, height: 1000, crop: 'limit' }],
+    folder: 'fire-sharing-project',  
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'txt', 'mp4', 'mp3', 'zip', 'rar'], 
+    transformation: [{ width: 1000, height: 1000, crop: 'limit' }], 
   },
 });
 
-// Create multer upload instance
+// configure multer upload
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024,
+    fileSize: 100 * 1024 * 1024, // max 100 MB
   },
   fileFilter: (req, file, cb) => {
-    cb(null, true);
+    cb(null, true); // accept all files
   }
 });
 
-module.exports = upload; 
+module.exports = upload;

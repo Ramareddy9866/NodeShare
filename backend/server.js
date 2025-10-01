@@ -21,11 +21,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-app.get('/', (req, res) => {
-  res.send('NodeShare API running');
-});
-
-// API routes
 app.use('/auth', authRouter);
 app.use('/friends', friendsRouter);
 app.use('/files', filesRouter);

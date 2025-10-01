@@ -1,93 +1,141 @@
-import React, { useState } from 'react';
-import { TextField, Button, Typography, InputLabel, FormHelperText, Card, CardContent, Box } from '@mui/material';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../config';
-import AppAlert from '../components/AppAlert';
+import { useState } from "react"
+import { TextField, Button, Typography, Card, CardContent, Box, FormHelperText, Alert } from "@mui/material"
+import { useNavigate } from "react-router-dom"
+import api from "../api"
 
 export default function FileUpload() {
-  const [file, setFile] = useState(null);
-  const [accessDepth, setAccessDepth] = useState(1);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({});
-  const navigate = useNavigate();
+  // keep track of file, hops, error, success and loading state
+  const [file, setFile] = useState(null)
+  const [accessDepth, setAccessDepth] = useState(1)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
 
-  // validate form fields
-  const validate = () => {
-    const errs = {};
-    if (!file) errs.file = 'Please select a file';
-    if (accessDepth === '' || isNaN(accessDepth) || accessDepth < 0) errs.accessDepth = 'Access depth must be 0 or greater';
-    setFieldErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
+  const handleSubmit = async (e) => {
+    e.preventDefault()
 
-  const handleFileChange = e => {
-    setFile(e.target.files[0]);
-    setFieldErrors({ ...fieldErrors, file: undefined });
-  };
-  const handleDepthChange = e => {
-    setAccessDepth(e.target.value);
-    setFieldErrors({ ...fieldErrors, accessDepth: undefined });
-  };
-
-  // upload file to server
-  const handleSubmit = async e => {
-    e.preventDefault();
-    setError(''); setSuccess('');
-    if (!validate()) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('accessDepth', accessDepth);
-    try {
-      await axios.post(`${API_BASE_URL}/files/upload`, formData, {
-        headers: {
-          'Authorization': 'Bearer ' + localStorage.getItem('token'),
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      setSuccess('File uploaded! Redirecting...');
-      setTimeout(() => navigate('/dashboard'), 1500);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Upload failed');
+    if (!file) {
+      setError("Please select a file")
+      return
     }
-  };
+
+    setError("")
+    setSuccess("")
+    setLoading(true)
+
+    const formData = new FormData()
+    formData.append("file", file) // attach file
+    formData.append("accessDepth", accessDepth) // attach hops value
+
+    try {
+      // send file to backend
+      await api.post("/files/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+
+      setSuccess("File uploaded successfully!")
+      setTimeout(() => navigate("/dashboard"), 1500) // go to dashboard after upload
+    } catch (err) {
+      setError(err.response?.data?.message || "Upload failed")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', mt: 6, px: 2 }}>
-      <Card sx={{ width: '100%', maxWidth: 400, bgcolor: '#F9FAFB', color: '#111827', border: '1.5px solid #64748B', boxShadow: 3 }}>
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h5" align="center" gutterBottom sx={{ mt: 1, mb: 2, fontWeight: 600 }}>Upload File</Typography>
-          {error && <AppAlert severity="error">{error}</AppAlert>}
-          {success && <AppAlert severity="success">{success}</AppAlert>}
-          <form onSubmit={handleSubmit} noValidate>
-            <InputLabel sx={{ mt: 2 }}>Select File</InputLabel>
-            <input type="file" onChange={handleFileChange} required style={{ marginBottom: 8 }} />
-            {fieldErrors.file && <FormHelperText error>{fieldErrors.file}</FormHelperText>}
-            <FormHelperText sx={{ mt: 1, mb: 0.5, fontWeight: 500, color: 'text.secondary' }}>
+    <Box
+      sx={{
+        minHeight: { xs: "100vh", md: "100vh" },
+        display: "flex",
+        alignItems: { xs: "flex-start", md: "center" },
+        justifyContent: "center",
+        pt: { xs: 4, sm: 6 },
+        px: { xs: 2, sm: 3 },
+      }}
+    >
+      <Card
+        sx={{
+          width: "100%",
+          maxWidth: { xs: 420, sm: 480, md: 560 },
+          bgcolor: "background.paper",
+          border: "1px solid",
+          borderColor: "divider",
+          boxShadow: { xs: 1, md: 3 },
+          borderRadius: 2,
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+          <Typography
+            variant="h5"
+            align="center"
+            gutterBottom
+            sx={{ fontWeight: 600, fontSize: { xs: "1.25rem", sm: "1.5rem" } }}
+          >
+            Upload File
+          </Typography>
+
+          {error && (<Alert severity="error" sx={{ mt: 2, mb: 2 }}> {error} </Alert>)}
+          {success && (<Alert severity="success" sx={{ mt: 2, mb: 2 }}> {success} </Alert>)}
+
+          <form onSubmit={handleSubmit}>
+            <Box
+              sx={{ mt: 2, mb: 2, '& input[type="file"]': { width: "100%", fontSize: { xs: 14, sm: 16 } } }}
+            >
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+                Select File
+              </Typography>
+              {/* file input */}
+              <input
+                type="file" 
+                onChange={(e) => setFile(e.target.files[0])}
+                required 
+                aria-label="Select file to upload"
+              />
+            </Box>
+
+            <FormHelperText
+              sx={{
+                mt: 1,
+                mb: 0.5,
+                fontWeight: 500,
+                color: "text.secondary",
+                fontSize: { xs: "0.8rem", sm: "0.875rem" },
+                lineHeight: 1.5,
+              }}
+            >
               Hops (access depth) is the maximum number of times this file can be reshared through your network.
             </FormHelperText>
-            <FormHelperText sx={{ mb: 1, color: 'text.secondary' }}>
+            <FormHelperText
+              sx={{ mb: 1, color: "text.secondary", fontSize: { xs: "0.8rem", sm: "0.875rem" }, lineHeight: 1.5}}
+            >
               Hops 0 means this file is not shareable with anyone.
             </FormHelperText>
+
+            {/* input for hops value */}
             <TextField
-              margin="normal"
               fullWidth
               label="Access Depth (hops)"
               type="number"
               inputProps={{ min: 0, max: 10 }}
               value={accessDepth}
-              onChange={handleDepthChange}
-              required
-              error={!!fieldErrors.accessDepth}
-              helperText={fieldErrors.accessDepth || ''}
+              onChange={(e) => setAccessDepth(e.target.value)}
+              sx={{ mb: 2, "& input": { fontSize: { xs: 14, sm: 16 } } }}
             />
-            <Button type="submit" fullWidth variant="contained" color="primary" sx={{ mt: 2 }}>
-              Upload
+
+             {/* upload button */}
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              disabled={loading}
+              sx={{ mt: 1, py: { xs: 1.25, sm: 1.5 }, fontSize: { xs: "0.95rem", sm: "1rem" } }}
+            >
+              {loading ? "Uploading..." : "Upload"}
             </Button>
           </form>
         </CardContent>
       </Card>
     </Box>
-  );
-} 
+  )
+}

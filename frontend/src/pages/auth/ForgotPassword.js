@@ -1,76 +1,118 @@
-import React, { useState, useEffect } from 'react';
-import { TextField, Button, Typography, Container, Card, CardContent, Box } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../../config';
-import AppAlert from '../../components/AppAlert';
+import { useState, useEffect } from "react"
+import { TextField, Button, Typography, Container, Card, CardContent, Box, Alert, CircularProgress } from "@mui/material"
+import { useNavigate } from "react-router-dom"
+import api from "../../api"
 
 const ForgotPassword = () => {
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
+  // state variables to store email, messages, errors and loading state
+  const [email, setEmail] = useState("")
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
 
-  // clear success message after 5 seconds
   useEffect(() => {
     if (message) {
-      const timer = setTimeout(() => setMessage(''), 5000);
-      return () => clearTimeout(timer);
+      const timer = setTimeout(() => setMessage(""), 5000)
+      return () => clearTimeout(timer)
     }
-  }, [message]);
+  }, [message])
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage('');
-    setError('');
+    e.preventDefault()
+    setMessage("")
+    setError("")
+    setLoading(true) 
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (res.ok) setMessage(data.message);
-      else setError(data.message);
+      const res = await api.post("/auth/forgot-password", { email })
+      if (res.status === 200) setMessage(res.data.message)
+      else setError(res.data.message)
     } catch (err) {
-      setError('Something went wrong.');
+      setError("Something went wrong.")
+    } finally {
+      setLoading(false) 
     }
-  };
+  }
 
   return (
-    <Container maxWidth="xs" sx={{ minHeight: '80vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', mt: 10 }}>
-      <Card sx={{ width: '100%', maxWidth: 400, bgcolor: '#F9FAFB', color: '#111827', border: '1.5px solid #64748B', boxShadow: 3 }}>
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h5" align="center" gutterBottom sx={{ mt: 1, mb: 2, fontWeight: 600 }}>Forgot Password</Typography>
+    <Container
+      maxWidth="sm"
+      sx={{
+        minHeight: { xs: "100dvh", md: "100vh" },
+        display: "flex",
+        alignItems: { xs: "flex-start", md: "center" },
+        justifyContent: "center",
+        py: { xs: 4, md: 8 },
+        px: { xs: 2, sm: 0 },
+      }}
+    >
+      {/* Card holds the forgot password form */}
+      <Card
+        sx={{
+          width: "100%",
+          maxWidth: { xs: "100%", sm: 440, md: 480 },
+          bgcolor: "#F9FAFB",
+          color: "#111827",
+          border: "1.5px solid #64748B",
+          boxShadow: 3,
+          borderRadius: 2,
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+          <Typography
+            variant="h5"
+            align="center"
+            gutterBottom
+            sx={{ mt: 1, mb: 2, fontWeight: 600, fontSize: { xs: "1.25rem", sm: "1.5rem" } }}
+          >
+            Forgot Password
+          </Typography>
+
+          {/* form to enter email and submit */}
           <form onSubmit={handleSubmit}>
-            <TextField
-              label="Email"
-              fullWidth
-              margin="normal"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-            />
-            <Box mt={2}>
-              <Button type="submit" variant="contained" color="primary" fullWidth>
-                Send Reset Link
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <TextField
+                label="Email"
+                fullWidth
+                margin="normal"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                sx={{
+                  "& .MuiInputBase-input": { fontSize: { xs: "0.95rem", sm: "1rem" } },
+                }}
+              />
+
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                fullWidth
+                disabled={loading}
+                sx={{ minHeight: { xs: 44, sm: 48 }, textTransform: "none" }}
+              >
+                {loading ? <CircularProgress size={22} sx={{ color: "#fff" }} /> : "Send Reset Link"}
+              </Button>
+
+              <Button
+                variant="outlined"
+                color="primary"
+                fullWidth
+                onClick={() => navigate("/login")}
+                sx={{ minHeight: { xs: 44, sm: 48 }, textTransform: "none" }}
+              >
+                Back to Login
               </Button>
             </Box>
-            <Button
-              variant="outlined"
-              color="primary"
-              fullWidth
-              sx={{ mt: 2 }}
-              onClick={() => navigate('/login')}
-            >
-              Back to Login
-            </Button>
           </form>
-          {message && <AppAlert severity="success" sx={{ mt: 2 }}>{message}</AppAlert>}
-          {error && <AppAlert severity="error" sx={{ mt: 2 }}>{error}</AppAlert>}
+
+          {/* show messages or errors */}
+          {message && (<Alert severity="success" sx={{ mt: 2 }}> {message} </Alert>)}
+          {error && (<Alert severity="error" sx={{ mt: 2 }}> {error} </Alert>)}
         </CardContent>
       </Card>
     </Container>
-  );
-};
+  )
+}
 
-export default ForgotPassword; 
+export default ForgotPassword

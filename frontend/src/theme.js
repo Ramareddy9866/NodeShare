@@ -2,20 +2,20 @@ import { createTheme } from '@mui/material/styles';
 
 const getTheme = () => createTheme({
   palette: {
-    primary: { main: '#1E3A8A' },      // top bar
-    secondary: { main: '#506889' },    // sidebar
-    accent: { main: '#38BDF8' },       // action buttons
+    primary: { main: '#1E3A8A' },      
+    secondary: { main: '#506889' },   
+    accent: { main: '#38BDF8' },       
     background: {
-      default: '#F9FAFB',              // app background
-      paper: '#FFFFFF'                 // card background
+      default: '#F9FAFB',              
+      paper: '#FFFFFF'               
     },
     text: {
-      primary: '#111827',              // main text
+      primary: '#111827',              
     },
-    success: { main: '#10B981' },      // success messages
-    error: { main: '#EF4444' },        // error messages
-    warning: { main: '#F59E0B' },      // warning messages
-    info: { main: '#3B82F6' }          // info messages
+    success: { main: '#10B981' },      
+    error: { main: '#EF4444' },        
+    warning: { main: '#F59E0B' },      
+    info: { main: '#3B82F6' }          
   },
 
   components: {

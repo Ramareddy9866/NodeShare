@@ -9,27 +9,7 @@ const cloudinary = require('../config/cloudinary');
 
 const router = express.Router();
 
-// find all users within access depth
-async function bfsAccess(ownerId, depth) {
-  const visited = new Set();
-  const queue = [[ownerId, 0]];
-  visited.add(ownerId.toString());
-  while (queue.length) {
-    const [userId, d] = queue.shift();
-    if (d >= depth) continue;
-    const user = await User.findById(userId).select('friends');
-    for (const friendId of user.friends) {
-      const fid = friendId.toString();
-      if (!visited.has(fid)) {
-        visited.add(fid);
-        queue.push([fid, d + 1]);
-      }
-    }
-  }
-  return Array.from(visited);
-}
-
-// upload new file
+// upload a file and create access graph for it
 router.post('/upload', auth, upload.single('file'), async (req, res) => {
   try {
     const { accessDepth } = req.body;
@@ -46,7 +26,8 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
       cloudinaryPublicId: req.file.filename
     });
     await fileDoc.save();
-    // give owner access with hop 0
+
+    // adding owner as first authorized user
     await AccessGraph.create({ file: fileDoc._id, authorizedUsers: [{ user: req.user.id, hop: 0, parent: null }] });
     res.status(201).json({ message: 'File uploaded', fileId: fileDoc._id });
   } catch (err) {
@@ -55,53 +36,64 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
   }
 });
 
-// share file with friends
+// share file with friends (with hop limit)
 router.post('/:fileId/share', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
     const { friends } = req.body;
-    if (!Array.isArray(friends)) return res.status(400).json({ message: 'Friends required' });
-    const file = await File.findById(fileId);
-    if (!file) return res.status(404).json({ message: 'File not found' });
-    // get access graph
-    const access = await AccessGraph.findOne({ file: fileId });
-    if (!access) return res.status(404).json({ message: 'Access graph not found' });
-    // check sharer's hop level
-    const sharerEntry = access.authorizedUsers.find(u => u.user.toString() === req.user.id);
-    if (!sharerEntry) return res.status(403).json({ message: 'You do not have access to share this file' });
-    // check hop limit
-    if (sharerEntry.hop >= file.accessDepth) return res.status(403).json({ message: 'You cannot share this file (hop limit reached)' });
-    // find all ancestors to prevent loops
-    let ancestorIds = new Set();
-    let currentUserId = req.user.id;
-    while (true) {
-      const entry = access.authorizedUsers.find(u => u.user.toString() === currentUserId);
-      if (!entry) break;
-      ancestorIds.add(entry.user.toString());
-      if (!entry.parent) break;
-      currentUserId = entry.parent.toString();
+
+    if (!Array.isArray(friends)) {
+      return res.status(400).json({ message: 'Friends required' });
     }
+
+    const file = await File.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const access = await AccessGraph.findOne({ file: fileId });
+    if (!access) {
+      return res.status(404).json({ message: 'Access graph not found' });
+    }
+
+    const sharerEntry = access.authorizedUsers.find(
+      u => u.user.toString() === req.user.id
+    );
+    if (!sharerEntry) {
+      return res.status(403).json({ message: 'You do not have access to share this file' });
+    }
+
+    if (sharerEntry.hop >= file.accessDepth) {
+      return res.status(403).json({ message: 'You cannot share this file (hop limit reached)' });
+    }
+
     let updated = false;
+
     for (const friendId of friends) {
-      // skip if already has access
       if (access.authorizedUsers.some(u => u.user.toString() === friendId)) continue;
-      // skip owner, self, or ancestors
-      if (friendId === file.owner.toString() || friendId === req.user.id || ancestorIds.has(friendId)) continue;
-      // check hop limit
+      if (friendId === file.owner.toString() || friendId === req.user.id) continue;
       const newHop = sharerEntry.hop + 1;
+
       if (newHop <= file.accessDepth) {
-        access.authorizedUsers.push({ user: friendId, hop: newHop, parent: req.user.id });
+        access.authorizedUsers.push({
+          user: friendId,
+          hop: newHop,
+          parent: req.user.id
+        });
         updated = true;
       }
     }
+
     if (updated) await access.save();
+
     res.json({ message: 'File shared', authorizedUsers: access.authorizedUsers });
   } catch (err) {
+    console.error('Share error:', err);
     res.status(500).json({ message: 'Server error' });
   }
-});
+});  
 
-// download file
+// download link if user has access
 router.get('/:fileId/download', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -111,26 +103,28 @@ router.get('/:fileId/download', auth, async (req, res) => {
     }
     const fileDoc = await File.findById(fileId);
     if (!fileDoc) return res.status(404).json({ message: 'File not found' });
-    
-    // Redirect to Cloudinary URL for download
-    res.redirect(fileDoc.cloudinaryUrl);
+    res.json({ url: fileDoc.cloudinaryUrl });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// get access list for file
+const toId = val => (val ? (val._id ? val._id.toString() : val.toString()) : null);
+
+// get access list visible to current user
 router.get('/:fileId/access-list', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
+
     const file = await File.findById(fileId).populate('owner', 'username email');
     if (!file) return res.status(404).json({ message: 'File not found' });
+
     const access = await AccessGraph.findOne({ file: fileId })
       .populate('authorizedUsers.user', 'username email')
       .populate('authorizedUsers.parent', 'username email');
+
     if (!access) return res.status(404).json({ message: 'Access graph not found' });
 
-    // file info
     const fileMeta = {
       _id: file._id,
       originalname: file.originalname,
@@ -140,29 +134,46 @@ router.get('/:fileId/access-list', auth, async (req, res) => {
       accessDepth: file.accessDepth
     };
 
-    // owner sees full graph, others see their path
-    if (file.owner._id?.toString() === req.user.id || file.owner.toString() === req.user.id) {
+    // owner can see full list
+    if (toId(file.owner) === req.user.id) {
       return res.json({ file: fileMeta, authorizedUsers: access.authorizedUsers });
     }
 
-    // find path from owner to current user
-    let path = [];
-    let currentUserId = req.user.id;
-    while (true) {
-      const entry = access.authorizedUsers.find(u => (u.user._id?.toString?.() || u.user.toString()) === currentUserId);
-      if (!entry) break;
-      path.push(entry);
-      if (!entry.parent) break;
-      currentUserId = entry.parent._id ? entry.parent._id.toString() : entry.parent.toString();
+    const authorized = access.authorizedUsers;
+    const currentEntry = authorized.find(u => toId(u.user) === req.user.id);
+    if (!currentEntry) {
+      return res.status(403).json({ message: 'You do not have access to this file' });
     }
-    path = path.reverse();
-    res.json({ file: fileMeta, authorizedUsers: path });
+
+    // show only your chain of access (one ancestor + children)
+    const visibleSet = new Set();
+
+    if (currentEntry.parent) {
+      visibleSet.add(toId(currentEntry.parent));
+    }
+    visibleSet.add(toId(currentEntry.user));
+
+    const queue = [toId(currentEntry.user)];
+    while (queue.length) {
+      const parentId = queue.shift();
+      for (const entry of authorized) {
+        if (toId(entry.parent) === parentId && !visibleSet.has(toId(entry.user))) {
+          visibleSet.add(toId(entry.user));
+          queue.push(toId(entry.user));
+        }
+      }
+    }
+
+    const visibleUsers = authorized.filter(u => visibleSet.has(toId(u.user)));
+
+    res.json({ file: fileMeta, authorizedUsers: visibleUsers });
   } catch (err) {
+    console.error('Error fetching access list:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// get user's uploaded files
+// get only files uploaded by me
 router.get('/my', auth, async (req, res) => {
   try {
     const files = await File.find({ owner: req.user.id });
@@ -172,7 +183,7 @@ router.get('/my', auth, async (req, res) => {
   }
 });
 
-// get files shared with user
+// get files shared with me by others
 router.get('/shared', auth, async (req, res) => {
   try {
     const accessEntries = await AccessGraph.find({ 'authorizedUsers.user': req.user.id }).populate('file');
@@ -190,8 +201,8 @@ router.get('/shared', auth, async (req, res) => {
   }
 });
 
-// find access path for user
-router.get('/:fileId/why/:userId', auth, async (req, res) => {
+// find who shared a file with a specific user
+router.get('/:fileId/sharedBy/:userId', auth, async (req, res) => {
   try {
     const { fileId, userId } = req.params;
     const file = await File.findById(fileId);
@@ -200,28 +211,19 @@ router.get('/:fileId/why/:userId', auth, async (req, res) => {
     if (!access || !access.authorizedUsers.some(u => u.user.toString() === userId)) {
       return res.status(403).json({ message: 'User does not have access' });
     }
-    // trace path from user to owner
-    let path = [];
-    let currentUserId = userId;
-    while (true) {
-      const entry = access.authorizedUsers.find(u => u.user.toString() === currentUserId);
-      if (!entry) break;
-      path.push(entry.user);
-      if (!entry.parent) break;
-      currentUserId = entry.parent.toString();
-    }
-    // reverse to show owner to user path
-    path = path.reverse();
-    // get user details
-    const users = await User.find({ _id: { $in: path } }).select('username email');
-    const pathUsers = path.map(id => users.find(u => u._id.toString() === id.toString()));
-    res.json({ path: pathUsers });
+
+    // get parent of this user
+    const sharedBy = access.authorizedUsers.find((u)=>u.user.toString()===userId)?.parent;
+    if(!sharedBy) return res.status(404).json({message: 'This user is the owner and was not shared by anyone'});
+    const sharedByUser = await User.findById(sharedBy).select('username email');
+    if(!sharedByUser) return res.status(404).json({message: 'The user who shared this file was not found'});
+    res.json({ sharedBy: sharedByUser });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// delete file (owner only)
+// delete file (only owner)
 router.delete('/:fileId', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -234,31 +236,28 @@ router.delete('/:fileId', auth, async (req, res) => {
       console.error(`[DELETE /files/${fileId}] Permission denied: user ${req.user.id} is not the owner`);
       return res.status(403).json({ message: 'Only the owner can delete this file' });
     }
-    // delete file from Cloudinary
+
+    // remove file from cloudinary
     try {
       await cloudinary.uploader.destroy(file.cloudinaryPublicId);
     } catch (cloudinaryErr) {
       console.error('Error deleting from Cloudinary:', cloudinaryErr);
     }
 
-    // send email notifications in background
+    // notify all users who had access
     const access = await AccessGraph.findOne({ file: fileId });
     if (access) {
-      // get all users except owner
       const userIds = access.authorizedUsers
         .map(entry => entry.user.toString())
         .filter(userId => userId !== req.user.id);
       
-      // send emails without waiting
       if (userIds.length > 0) {
         (async () => {
           try {
             const users = await User.find({ _id: { $in: userIds } });
             const emails = users.map(u => u.email);
             if (emails.length > 0) {
-              // get owner info
               const ownerUser = await User.findById(req.user.id);
-              // setup email
               const transporter = nodemailer.createTransport({
                 service: 'gmail',
                 auth: {
@@ -282,7 +281,7 @@ router.delete('/:fileId', auth, async (req, res) => {
       }
     }
 
-    // remove from database
+    // remove file + access entry from DB
     try {
       await File.deleteOne({ _id: fileId });
       await AccessGraph.deleteOne({ file: fileId });
@@ -297,7 +296,7 @@ router.delete('/:fileId', auth, async (req, res) => {
   }
 });
 
-// get user's hop level for file
+// find my hop level for a file
 router.get('/:fileId/my-hop', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -311,15 +310,14 @@ router.get('/:fileId/my-hop', auth, async (req, res) => {
   }
 });
 
-// get access graph edges
+// return edges for access graph
 router.get('/:fileId/access-edges', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
     const access = await AccessGraph.findOne({ file: fileId });
     if (!access) return res.status(404).json({ message: 'Access graph not found' });
-    // create edges from parent to child
     const edges = access.authorizedUsers
-      .filter(u => u.parent) // skip owner
+      .filter(u => u.parent)
       .map(u => ({ from: u.parent.toString(), to: u.user.toString() }));
     res.json({ edges });
   } catch (err) {
@@ -327,7 +325,7 @@ router.get('/:fileId/access-edges', auth, async (req, res) => {
   }
 });
 
-// revoke access for user and downstream
+// revoke my access and all who got file from me
 router.delete('/:fileId/revoke', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -338,10 +336,10 @@ router.delete('/:fileId/revoke', auth, async (req, res) => {
     }
     const access = await AccessGraph.findOne({ file: fileId });
     if (!access) return res.status(404).json({ message: 'Access graph not found' });
-    // find current user's entry
     const myEntry = access.authorizedUsers.find(u => u.user.toString() === req.user.id);
     if (!myEntry) return res.status(403).json({ message: 'You do not have access to this file' });
-    // find all users to remove (BFS from current user)
+
+    // remove me and my downstream users
     const toRemove = new Set([req.user.id]);
     const queue = [req.user.id];
     while (queue.length) {
@@ -353,7 +351,6 @@ router.delete('/:fileId/revoke', auth, async (req, res) => {
         }
       }
     }
-    // remove all found users
     access.authorizedUsers = access.authorizedUsers.filter(u => !toRemove.has(u.user.toString()));
     await access.save();
     res.json({ message: 'Access revoked for you and your downstream recipients.' });
@@ -362,7 +359,7 @@ router.delete('/:fileId/revoke', auth, async (req, res) => {
   }
 });
 
-// get full access list (admin view)
+// get full list of all authorized users (owner)
 router.get('/:fileId/full-access-list', auth, async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -376,4 +373,4 @@ router.get('/:fileId/full-access-list', auth, async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

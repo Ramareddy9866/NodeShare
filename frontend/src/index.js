@@ -2,18 +2,19 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
-import getTheme from './theme';
+import theme from './theme'; 
+
+import { AuthProvider } from './AuthContext';
 
 function Main() {
-  const mode = localStorage.getItem('themeMode') || 'light';
-  const theme = getTheme(mode);
   return (
     <ThemeProvider theme={theme}>
       <Router>
-        <App themeMode={mode} />
+        <AuthProvider>
+          <App />
+        </AuthProvider>
       </Router>
     </ThemeProvider>
   );
@@ -21,5 +22,3 @@ function Main() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<Main />);
-
-reportWebVitals();
